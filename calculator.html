@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Финансовый калькулятор (6 знаков после запятой)</title>
+    <title>Финансовый калькулятор (Математический приоритет)</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -134,7 +134,7 @@
 <body>
 
     <div class="calculator-container">
-        <h2>Финансовый калькулятор (6 знаков)</h2>
+        <h2>Финансовый калькулятор (Математический приоритет)</h2>
 
         <div class="student-info">
             Мардасевич Егор Сергеевич<br>
@@ -186,7 +186,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
 
-            // === КОНСТАНТЫ (ОБНОВЛЕНО ДО 6 ЗНАКОВ) ===
+            // === КОНСТАНТЫ (6 ЗНАКОВ) ===
             const DECIMALS = 6;
             const PRECISION = 1_000_000n; // 10^6
             const HALF_PRECISION = 500_000n; // 0.5 * 10^6
@@ -194,7 +194,6 @@
             const MAX_VALUE = MAX_INTEGER_PART * PRECISION; // 10^18
             const MIN_VALUE = -MAX_VALUE;
 
-            // === Получение элементов DOM ===
             const inputs = [
                 document.getElementById('num1'), document.getElementById('num2'),
                 document.getElementById('num3'), document.getElementById('num4')
@@ -208,7 +207,6 @@
             const errorDisplay = document.getElementById('error-display');
             const calcButton = document.getElementById('calculate-btn');
 
-            // === Функции отображения ошибок ===
             function showError(msg) {
                 errorDisplay.textContent = msg;
                 errorDisplay.style.display = 'block';
@@ -254,7 +252,6 @@
                 let integerPart = BigInt(parts[0]);
                 let decimalStr = parts[1] || "";
 
-                // Обновлено: Паддинг до 6 знаков
                 decimalStr = decimalStr.padEnd(DECIMALS, '0').substring(0, DECIMALS);
                 const decimalBigInt = BigInt(decimalStr);
                 
@@ -272,13 +269,10 @@
                 
                 switch (operation) {
                     case 'add':
-                        result = val1 + val2;
-                        break;
                     case 'subtract':
-                        result = val1 - val2;
+                        result = (operation === 'add') ? val1 + val2 : val1 - val2;
                         break;
                     case 'multiply':
-                        // Умножение с округлением до 6 знаков
                         const product = val1 * val2;
                         if (product >= 0n) {
                             result = (product + HALF_PRECISION) / PRECISION;
@@ -288,7 +282,6 @@
                         break;
                     case 'divide':
                         if (val2 === 0n) throw new Error("Деление на ноль невозможно.");
-                        // Деление с округлением до 6 знаков (нужен буфер *10)
                         const buffer = (val1 * PRECISION * 10n) / val2;
                         const roundingCorrection = (buffer >= 0n) ? 5n : -5n;
                         result = (buffer + roundingCorrection) / 10n;
@@ -297,20 +290,76 @@
                         throw new Error("Неизвестная операция.");
                 }
 
-                // Проверка на переполнение после операции
                 if (result > MAX_VALUE || result < MIN_VALUE) {
                     throw new Error("Переполнение диапазона в промежуточном вычислении. Лимит: +/- 1 000 000 000 000");
                 }
 
                 return result;
             }
+            
+            // Вспомогательная функция для определения приоритета
+            function getPriority(op) {
+                if (op === 'multiply' || op === 'divide') return 2;
+                if (op === 'add' || op === 'subtract') return 1;
+                return 0;
+            }
+
+            /**
+             * Вычисляет простое выражение в форме [A op B op C] с соблюдением приоритетов.
+             * Использует модифицированный алгоритм "двух стеков".
+             * @param {BigInt[]} operands - Массив операндов (например, [Num1, R1, Num4])
+             * @param {string[]} operators - Массив операторов (например, [opA, opC])
+             * @returns {BigInt} Финальный результат
+             */
+            function evaluateExpression(operands, operators) {
+                // Стеки для вычислений
+                const values = [...operands]; // Копируем операнды
+                const opsQueue = [...operators]; // Копируем операторы
+
+                // Цикл, пока есть операции
+                while (opsQueue.length > 0) {
+                    const currentOp = opsQueue[0];
+                    const nextOp = opsQueue[1];
+
+                    if (!nextOp || getPriority(currentOp) >= getPriority(nextOp)) {
+                        // Выполняем текущую операцию (слева направо или имеет больший/равный приоритет)
+                        const op = opsQueue.shift();
+                        const val1 = values.shift();
+                        const val2 = values.shift();
+                        
+                        const result = performOperation(val1, val2, op);
+                        values.unshift(result); // Кладем результат обратно в стек операндов
+                    } else {
+                        // Следующая операция имеет более высокий приоритет (например, * после +)
+                        // В этом упрощенном случае (только две операции) это означает, что O_C приоритетнее O_A.
+                        // Меняем местами операнды и операторы для следующего шага
+                        const opA = opsQueue.shift();
+                        const opC = opsQueue.shift();
+                        
+                        const val1 = values.shift();
+                        const val2 = values.shift();
+                        const val3 = values.shift();
+                        
+                        // Вычисляем R1 * O_C * R2
+                        const resultMid = performOperation(val2, val3, opC);
+                        
+                        // Теперь вычисляем R0 * O_A * resultMid
+                        const finalResult = performOperation(val1, resultMid, opA);
+                        
+                        // В более общем случае это требует рекурсивного или стекового парсинга,
+                        // но для трех операндов и двух операторов достаточно этой проверки.
+                        return finalResult;
+                    }
+                }
+                
+                return values[0];
+            }
+
 
             // === ФУНКЦИИ ФИНАЛЬНОГО ОКРУГЛЕНИЯ ДО ЦЕЛЫХ ===
             
-            // 1. Математическое округление
             function roundMath(bigIntScaled) {
                 const halfway = HALF_PRECISION;
-                
                 if (bigIntScaled >= 0n) {
                     return (bigIntScaled + halfway) / PRECISION;
                 } else {
@@ -318,11 +367,10 @@
                 }
             }
 
-            // 2. Бухгалтерское (банковское) округление
             function roundBankers(bigIntScaled) {
                 const integerPart = bigIntScaled / PRECISION;
                 const fractionalPart = bigIntScaled % PRECISION;
-                const absFractional = fractionalPart < 0n ? -fractionalPart : fractionalPart; 
+                const absFractional = fractionalPart < 0n ? -fractionionalPart : fractionalPart; 
                 const sign = bigIntScaled >= 0n ? 1n : -1n;
 
                 if (absFractional < HALF_PRECISION) {
@@ -332,7 +380,6 @@
                     return integerPart + sign;
                 }
                 
-                // Случай "ровно половина"
                 if (integerPart % 2n === 0n) {
                     return integerPart;
                 } else {
@@ -340,12 +387,11 @@
                 }
             }
 
-            // 3. Усечение (Truncate)
             function roundTruncate(bigIntScaled) {
                 return bigIntScaled / PRECISION;
             }
             
-            // === ФОРМАТИРОВАНИЕ ВЫВОДА (Обновлено для 6 знаков) ===
+            // === ФОРМАТИРОВАНИЕ ВЫВОДА ===
 
             function formatResult(bigIntNum) {
                 const isNegative = bigIntNum < 0n;
@@ -354,20 +400,17 @@
                 const integerPartVal = absVal / PRECISION;
                 const decimalPartVal = absVal % PRECISION;
 
-                // Форматирование целой части с пробелами
                 let intStr = integerPartVal.toString();
                 intStr = intStr.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
-                // Форматирование дробной части
                 let decStr = decimalPartVal.toString().padStart(DECIMALS, '0');
-                decStr = decStr.replace(/0+$/, ''); // Убираем незначащие нули
+                decStr = decStr.replace(/0+$/, ''); 
 
                 let result = (isNegative ? "-" : "") + intStr;
 
                 if (decStr.length > 0) {
                     result += "." + decStr;
                 } else {
-                    // Если число целое, выводим 6 нулей
                     result += "." + '0'.repeat(DECIMALS);
                 }
 
@@ -379,7 +422,7 @@
             calcButton.addEventListener('click', () => {
                 clearError();
                 try {
-                    // 1. Парсинг всех операндов
+                    // 1. Парсинг операндов
                     const v1 = parseAndValidate(inputs[0].value, "Num 1");
                     const v2 = parseAndValidate(inputs[1].value, "Num 2");
                     const v3 = parseAndValidate(inputs[2].value, "Num 3");
@@ -389,21 +432,21 @@
                     const opB = ops[1].value;
                     const opC = ops[2].value;
 
-                    let intermediateResult;
+                    // 2. Шаг 1: Приоритетная операция (в скобках)
+                    // R1 = Num2 opB Num3. Результат округляется до 6 знаков.
+                    const R1 = performOperation(v2, v3, opB);
 
-                    // A. Приоритетный блок (в скобках): (Num2 opB Num3)
-                    intermediateResult = performOperation(v2, v3, opB);
-
-                    // B. Левая часть: Num1 opA [Результат A]
-                    intermediateResult = performOperation(v1, intermediateResult, opA);
-
-                    // C. Финальный результат: [Результат B] opC Num4
-                    const finalResultScaled = performOperation(intermediateResult, v4, opC);
+                    // 3. Шаг 2: Вычисление выражения с классическим приоритетом
+                    // Num1 opA R1 opC Num4
+                    const operands = [v1, R1, v4];
+                    const operators = [opA, opC];
                     
-                    // 2. Отображение основного результата
+                    const finalResultScaled = evaluateExpression(operands, operators);
+
+                    // 4. Отображение основного результата
                     resultFinalOutput.textContent = formatResult(finalResultScaled);
 
-                    // 3. Финальное округление до целого
+                    // 5. Финальное округление до целого
                     const roundMethod = document.querySelector('input[name="final_round"]:checked').value;
                     let finalRoundedInt;
 
@@ -419,7 +462,7 @@
                             break;
                     }
 
-                    // 4. Отображение округленного результата
+                    // 6. Отображение округленного результата
                     let finalRoundedStr = finalRoundedInt.toString();
                     finalRoundedStr = finalRoundedStr.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
